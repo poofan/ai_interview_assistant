@@ -31,6 +31,8 @@ from modules.ui.error_handler import get_error_handler, handle_api_error
 from modules.ui.update_dialog import show_update_dialog
 from modules.config.api_keys import get_api_key_manager
 from modules.config.version_manager import get_version_manager
+from modules.auth import AuthManager
+from modules.features import FeatureManager
 
 
 class AudioProcessingThread(QThread):
@@ -105,6 +107,8 @@ class HintsageApp(QObject):
         self.screenshot_manager: ScreenshotManager = None
         self.prompt_manager: PromptManager = None
         self.version_manager = None
+        self.auth_manager: Optional[AuthManager] = None
+        self.feature_manager: Optional[FeatureManager] = None
         
         # Поток обработки аудио
         self.audio_thread: AudioProcessingThread = None
@@ -134,7 +138,17 @@ class HintsageApp(QObject):
         self.version_manager = get_version_manager()
         logger.info(f"📦 Версия приложения: {self.version_manager.get_current_version()}")
         
-        # 2.1. Проверка обновлений [АЗ + ДОБРО] - НЕ БЛОКИРУЕТ запуск пока нет backend
+        # 2.1. Auth Manager [ШТОР + АЗ]
+        backend_url = self.config.get("backend.url", "http://localhost:8000")
+        frontend_url = self.config.get("backend.frontend_url", "http://localhost:3000")
+        self.auth_manager = AuthManager(backend_url=backend_url, frontend_url=frontend_url)
+        logger.info("[OK] AuthManager инициализирован")
+        
+        # 2.2. Feature Manager [АЗ + ДОБРО] - по умолчанию FREE tier
+        self.feature_manager = FeatureManager(tier="free")
+        logger.info(f"[OK] FeatureManager инициализирован (tier: free, features: {len(self.feature_manager.features)})")
+        
+        # 2.3. Проверка обновлений [АЗ + ДОБРО] - НЕ БЛОКИРУЕТ запуск пока нет backend
         # self._check_for_updates()  # Отключено до готовности backend
         
         # 3. Проверка API ключа [ШТОР + АЗ]
