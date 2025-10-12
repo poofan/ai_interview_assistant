@@ -13,6 +13,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru">
+      <head>
+        <meta charSet="utf-8" />
+        <meta httpEquiv="Content-Type" content="text/html; charset=utf-8" />
+      </head>
       <body>{children}</body>
     </html>
   )
