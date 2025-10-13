@@ -20,14 +20,19 @@ binaries = []
 hiddenimports = []
 
 # 1. Конфигурация
+# БЕЗОПАСНОСТЬ: Включаем только config.example.yaml
+# config.yaml НЕ включается - создается при первом запуске из example
+# Это предотвращает изменение критических настроек пользователем
 datas += [
     ('config.example.yaml', '.'),
-    ('config.yaml', '.'),
+    # ('config.yaml', '.'),  # ❌ НЕ включаем! Безопасность!
 ]
 
-# 2. Модели Vosk (если есть)
-if os.path.exists('models'):
-    datas += [('models', 'models')]
+# 2. Model Registry (JSON манифест) - БЕЗ САМИХ МОДЕЛЕЙ!
+datas += [
+    ('models/model_registry.json', 'models'),
+]
+# ВАЖНО: Модели НЕ включаются в .exe, они загружаются при первом запуске!
 
 # 3. Data директории
 for folder in ['data/screenshots', 'data/sessions', 'logs']:
@@ -97,6 +102,15 @@ hiddenimports += [
     'modules.parallel',
     'modules.parallel.request_queue',
     'modules.parallel.utils',
+    'modules.models',
+    'modules.models.model_manager',
+    'modules.auth',
+    'modules.features',
+    'modules.ui',
+    'modules.ui.error_handler',
+    'modules.ui.update_dialog',
+    'modules.config.api_keys',
+    'modules.config.version_manager',
 ]
 
 # ============================================================================

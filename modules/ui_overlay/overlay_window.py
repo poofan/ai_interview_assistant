@@ -128,6 +128,12 @@ class OverlayWindow(QMainWindow):
         
         status_layout.addStretch()
         
+        # [TIER] - Индикатор тарифа
+        self.tier_label = QLabel("🎯 FREE")
+        self.tier_label.setStyleSheet("color: #888888; font-size: 9px; font-weight: bold;")
+        self.tier_label.setToolTip("Текущий тариф подписки")
+        status_layout.addWidget(self.tier_label)
+        
         # [ПАМЯТЬ] - Индикатор контекста
         self.context_label = QLabel("📝 Контекст: 0")
         self.context_label.setStyleSheet("color: #ffaa00; font-size: 9px;")
@@ -335,6 +341,38 @@ class OverlayWindow(QMainWindow):
             color = "#ff6600"  # Красный (близко к лимиту)
         
         self.context_label.setStyleSheet(f"color: {color}; font-size: 9px;")
+    
+    def update_tier_indicator(self, tier: str) -> None:
+        """
+        [TIER] - Обновить индикатор тарифа
+        
+        Args:
+            tier: Название тарифа (FREE, PRO, ENTERPRISE)
+        """
+        tier_upper = tier.upper()
+        
+        # Цвета для разных тарифов
+        tier_colors = {
+            "FREE": "#888888",      # Серый
+            "PRO": "#00aaff",       # Синий
+            "ENTERPRISE": "#ff9900"  # Оранжевый
+        }
+        
+        # Эмодзи для разных тарифов
+        tier_emojis = {
+            "FREE": "🆓",
+            "PRO": "⭐",
+            "ENTERPRISE": "💎"
+        }
+        
+        color = tier_colors.get(tier_upper, "#888888")
+        emoji = tier_emojis.get(tier_upper, "🎯")
+        
+        self.tier_label.setText(f"{emoji} {tier_upper}")
+        self.tier_label.setStyleSheet(f"color: {color}; font-size: 9px; font-weight: bold;")
+        self.tier_label.setToolTip(f"Текущий тариф: {tier_upper}")
+        
+        logger.info(f"[TIER] Индикатор обновлен: {tier_upper}")
     
     def show_loading(self) -> None:
         """

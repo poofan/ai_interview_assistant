@@ -33,6 +33,7 @@ from modules.config.api_keys import get_api_key_manager
 from modules.config.version_manager import get_version_manager
 from modules.auth import AuthManager
 from modules.features import FeatureManager
+from modules.models import ModelManager, ModelDownloadDialog
 
 
 class AudioProcessingThread(QThread):
@@ -148,6 +149,13 @@ class HintsageApp(QObject):
         self.feature_manager = FeatureManager(tier="free")
         logger.info(f"[OK] FeatureManager инициализирован (tier: free, features: {len(self.feature_manager.features)})")
         
+        # Обновляем индикатор тарифа в Overlay
+        if self.overlay_window:
+            self.overlay_window.update_tier_indicator("FREE")
+        
+        # 2.2.1. Model Manager [МУДРОСТЬ + ДОБРО] - Проверка и загрузка ML моделей
+        self._check_and_download_models()
+        
         # 2.3. Проверка обновлений [АЗ + ДОБРО] - НЕ БЛОКИРУЕТ запуск пока нет backend
         # self._check_for_updates()  # Отключено до готовности backend
         
@@ -202,10 +210,20 @@ class HintsageApp(QObject):
             "whisper": self.config.get("stt.whisper", {})
         }
         
+        # [БЕЗОПАСНОСТЬ] Получаем РАЗРЕШЕННЫЙ движок на основе тарифа
+        allowed_engine = self.feature_manager.get_stt_engine()
+        config_engine = self.config.get("stt.default_engine", "vosk")
+        
+        if config_engine != allowed_engine:
+            logger.warning(f"⚠️ [SECURITY] Config пытается использовать '{config_engine}', но тариф '{self.feature_manager.tier}' позволяет только '{allowed_engine}'")
+            logger.warning(f"⚠️ [SECURITY] Принудительно используем '{allowed_engine}'")
+        
         self.stt_manager = STTManager(
-            default_engine=self.config.get("stt.default_engine", "vosk"),
+            default_engine=allowed_engine,  # ✅ ИЗ FEATURE MANAGER, НЕ ИЗ КОНФИГА!
             config=stt_config
         )
+        
+        logger.info(f"✅ STT Manager инициализирован с движком '{allowed_engine}' (tier: {self.feature_manager.tier})")
         
         # 6. Question Detector [ЧЕЛО + МЫСЛЕТЕ]
         self.question_detector = QuestionDetector(
@@ -631,6 +649,49 @@ class HintsageApp(QObject):
             logger.warning(f"⚠️ Ошибка при проверке обновлений: {e}")
             # Не прерываем работу приложения из-за ошибки проверки обновлений
     
+    def _check_and_download_models(self) -> None:
+        """
+        [МУДРОСТЬ + ДОБРО] - Проверка и загрузка необходимых ML моделей
+        """
+        try:
+            logger.info("🔍 Проверка ML моделей...")
+            
+            # Создаем Model Manager
+            model_manager = ModelManager()
+            
+            # Получаем текущий тариф
+            tier = self.feature_manager.tier if hasattr(self, 'feature_manager') else "free"
+            
+            # Проверяем недостающие модели
+            missing = model_manager.get_missing_models(tier)
+            
+            if not missing:
+                logger.info("✅ Все модели уже загружены")
+                return
+            
+            total_size = sum(m["size_bytes"] for m in missing)
+            size_mb = total_size / 1024 / 1024
+            
+            logger.info(f"📥 Требуется загрузить {len(missing)} моделей (~{size_mb:.0f} MB)")
+            
+            # Показываем диалог загрузки
+            if ModelDownloadDialog:
+                dialog = ModelDownloadDialog(model_manager, tier)
+                result = dialog.exec()
+                
+                if result:
+                    logger.info("✅ Модели успешно загружены")
+                else:
+                    logger.warning("⚠️ Загрузка моделей отменена пользователем")
+            else:
+                # Если нет UI, загружаем в консоли
+                logger.info("📥 Загрузка моделей без UI...")
+                model_manager.download_missing_models(tier)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке/загрузке моделей: {e}")
+            # Не прерываем работу - модели могут быть уже установлены вручную
+    
     def _validate_api_key(self) -> None:
         """
         [ШТОР + АЗ] - Проверить валидность API ключа при запуске
@@ -706,6 +767,34 @@ class HintsageApp(QObject):
         """
         [ВЕДИ + МЫСЛЕТЕ] - Сделать скриншот и распознать текст
         """
+        # [БЕЗОПАСНОСТЬ] Проверка доступа к OCR на основе тарифа
+        if not self.feature_manager.can_use_screenshot_ocr():
+            logger.warning(f"⚠️ [SECURITY] Попытка использовать OCR на тарифе '{self.feature_manager.tier}'")
+            logger.warning(f"⚠️ [SECURITY] OCR доступен только на PRO/ENTERPRISE")
+            
+            upgrade_msg = (
+                f"OCR скриншотов доступен только на PRO тарифе\n\n"
+                f"Ваш текущий тариф: {self.feature_manager.tier.upper()}\n\n"
+                f"Перейдите на PRO для доступа к:\n"
+                f"• OCR распознавание текста\n"
+                f"• Whisper GPU (точное распознавание)\n"
+                f"• Безлимитные запросы\n"
+                f"• Расширенный контекст\n\n"
+                f"Цена: 1499₽/месяц\n\n"
+                f"Нажмите Ctrl+Shift+L для авторизации и upgrade"
+            )
+            
+            self.overlay_window.show_error(upgrade_msg)
+            
+            # Показываем также в GUI
+            from modules.ui.error_handler import get_error_handler
+            error_handler = get_error_handler()
+            error_handler.show_warning(
+                "OCR недоступен",
+                f"OCR скриншотов доступен только на PRO тарифе.\n\n{self.feature_manager.get_upgrade_message()}"
+            )
+            return
+        
         logger.info("[SCREENSHOT] Захват скриншота...")
         
         self.overlay_window.set_status("[SCREENSHOT] Захват скриншота...", "#ffaa00")

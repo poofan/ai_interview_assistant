@@ -17,17 +17,17 @@ class Settings(BaseSettings):
     # Основные настройки
     APP_NAME: str = "Hintsage Backend"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = False
+    DEBUG: bool = True  # Включаем для тестирования
     API_V1_PREFIX: str = "/api/v1"
     
-    # Database
-    DATABASE_URL: str = "postgresql://user:password@localhost:5432/hintsage"
+    # Database (PostgreSQL)
+    DATABASE_URL: str = "postgresql://postgres:090eafcd-96ec-4bc4-bdb9-5f8e20faa00b@localhost:5432/hintsage"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # JWT
-    JWT_SECRET_KEY: str = "YOUR_SUPER_SECRET_KEY_CHANGE_IN_PRODUCTION"
+    JWT_SECRET_KEY: str = "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 дней
     JWT_REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 дней
