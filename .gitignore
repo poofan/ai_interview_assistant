@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Data and sessions
+data/
+*.db
+*.sqlite
+
+# Models (большие файлы)
+models/
+
+# Config с API keys
+config.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Временные файлы
+*.tmp
+*.bak
+.cache/
+
+# PyQt
+*.ui
+
+# Тесты
+.pytest_cache/
+.coverage
+htmlcov/

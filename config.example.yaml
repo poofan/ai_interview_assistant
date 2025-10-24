@@ -1,0 +1,130 @@
+# Hintsage Configuration Example
+# Скопируйте этот файл в config.yaml и заполните своими данными
+
+# OpenAI Configuration [АЗ + РЦИ]
+openai:
+  api_key: "sk-proj-6rZ27YkZcTnhI90SJYZCoA******uf9seOZMO7sap65C5VqxyddZXqfMRU9VDEA"  # Вставьте ваш ключ
+  model: "gpt-4.1-mini"  # gpt-4, gpt-4o, gpt-4-turbo, gpt-4o-mini
+  max_tokens: 2000  # Увеличено для полных ответов
+  temperature: 0.7
+  system_prompt: "Ты - профессиональный технический консультант. Давай краткие, точные ответы на вопросы собеседований."
+
+# Speech-to-Text Configuration [МЫСЛЕТЕ + ВЕДИ]
+stt:
+  default_engine: "whisper"  # vosk или whisper
+  language: "ru"  # ru, en, multi
+  vosk:
+    model_path: "models/vosk-model-small-ru-0.22"
+  whisper:
+    model_size: "small"  # tiny, base, small, medium, large (small - баланс точности и скорости)
+    device: "cpu"  # cpu или cuda
+
+# Audio Capture [ВЕДИ + ИЖЕ]
+audio:
+  source: "both"  # system (динамики - голос собеседника), microphone (ваш голос), both (оба)
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 1024
+  buffer_seconds: 30  # Сколько секунд аудио держать в буфере
+
+# Question Detection [ЧЕЛО + МЫСЛЕТЕ]
+question_detector:
+  mode: "auto"  # auto (regex only), manual, hybrid (regex+ML), ml
+  confidence_threshold: 0.7
+  patterns:
+    - "как.*\\?"
+    - "что.*\\?"
+    - "почему.*\\?"
+    - "расскажи"
+    - "объясни"
+  ml_model: "distilbert-base-multilingual-cased"  # Для ML-детекции
+
+# Context Manager [ПАМЯТЬ + ДОБРО]
+context:
+  max_messages: 30  # Увеличено для длинных интервью
+  context_window: 10000  # Увеличено для длинных диалогов
+  save_history: true
+  history_path: "data/sessions"
+  export_format: "json"  # json или markdown
+
+# Parallel Processing [ДОБРО + ИЖЕ]
+parallel:
+  enabled: true
+  max_workers: 3  # Одновременных потоков обработки
+  queue_limit: 10  # Максимум запросов в очереди
+  timeout: 60  # Таймаут на один запрос (сек)
+  display_mode: "completion_order"  # completion_order или fifo
+  show_question_in_answer: true  # Показывать вопрос в ответе
+  question_max_length: 100  # Макс длина вопроса для отображения
+
+# UI Overlay [ЛИЧЬ + ЧЕЛО]
+ui:
+  accumulate_answers: true  # Накопительный режим (не перезатирать ответы)
+  overlay:
+    width: 400
+    height: 600
+    position: "top-right"  # top-left, top-right, bottom-left, bottom-right
+    opacity: 0.95
+    always_on_top: true
+    frameless: true
+    phantom_mode: true  # Мышь проходит сквозь окно
+  
+  teleprompter:
+    enabled: true
+    font_size: 16
+    font_family: "Consolas"
+    scroll_speed: 50
+    width: 300
+    height: 200
+  
+  syntax_highlighting:
+    theme: "monokai"  # monokai, github, vs, solarized
+    enable_code_blocks: true
+    enable_math: true
+    enable_uml: false
+
+# Security & Anti-Detection [ШТОР + ТАЙНА]
+security:
+  anti_screenshot: true
+  anti_screen_share: true
+  no_focus_steal: true
+  silent_mode: true  # Отключить системные звуки
+  encrypt_api_key: true
+  virtual_cursor: false  # Виртуальный курсор для управления
+
+# Hotkeys [ЧЕЛО + ПУТЬ]
+hotkeys:
+  toggle_overlay: "ctrl+shift+h"
+  manual_trigger: "ctrl+shift+q"
+  screenshot_area: "ctrl+shift+s"
+  clear_context: "ctrl+shift+c"
+  exit: "ctrl+shift+x"
+
+# Screenshot & OCR [ВЕДИ + МЫСЛЕТЕ]
+screenshot:
+  ocr_engine: "easyocr"  # tesseract или easyocr
+  languages: ["ru", "en"]
+  save_screenshots: false
+  screenshot_path: "data/screenshots"
+
+# Logging [ВЕДИ + СЛОВО]
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+  log_path: "logs/hintsage.log"
+  rotation: "1 day"
+  retention: "7 days"
+
+# Interview Settings [ЧЕЛО + СЛОВО]
+interview:
+  default_profile: "algorithms"  # algorithms, frontend, backend, system_design, theory
+  programming_language: "Python"  # Python, Java, C++, JavaScript, Go, C#, Rust, etc.
+  auto_detect_language: true      # Автоопределение языка из вопроса
+
+# Advanced Features
+features:
+  rag_knowledge_base: false  # RAG база знаний
+  multi_session: false  # Параллельные сессии
+  voice_output: false  # TTS вывод
+  statistics: true  # Сбор статистики
+
