@@ -27,6 +27,13 @@ from modules.screenshot_ocr import ScreenshotManager
 from modules.prompt_templates import PromptManager, InterviewProfile
 from modules.parallel import RequestQueue
 from modules.parallel.utils import format_answer_with_question
+from modules.ui.error_handler import get_error_handler, handle_api_error
+from modules.ui.update_dialog import show_update_dialog
+from modules.config.api_keys import get_api_key_manager
+from modules.config.version_manager import get_version_manager
+from modules.auth import AuthManager
+from modules.features import FeatureManager
+from modules.models import ModelManager, ModelDownloadDialog
 
 
 class AudioProcessingThread(QThread):
@@ -100,6 +107,9 @@ class HintsageApp(QObject):
         self.security_manager: SecurityManager = None
         self.screenshot_manager: ScreenshotManager = None
         self.prompt_manager: PromptManager = None
+        self.version_manager = None
+        self.auth_manager: Optional[AuthManager] = None
+        self.feature_manager: Optional[FeatureManager] = None
         
         # Поток обработки аудио
         self.audio_thread: AudioProcessingThread = None
@@ -124,6 +134,33 @@ class HintsageApp(QObject):
         
         # 1. Конфигурация [ДОБРО + АЗ]
         self.config = ConfigManager()
+        
+        # 2. Version Manager [АЗ + ШТОР]
+        self.version_manager = get_version_manager()
+        logger.info(f"📦 Версия приложения: {self.version_manager.get_current_version()}")
+        
+        # 2.1. Auth Manager [ШТОР + АЗ]
+        backend_url = self.config.get("backend.url", "http://localhost:8000")
+        frontend_url = self.config.get("backend.frontend_url", "http://localhost:3000")
+        self.auth_manager = AuthManager(backend_url=backend_url, frontend_url=frontend_url)
+        logger.info("[OK] AuthManager инициализирован")
+        
+        # 2.2. Feature Manager [АЗ + ДОБРО] - по умолчанию FREE tier
+        self.feature_manager = FeatureManager(tier="free")
+        logger.info(f"[OK] FeatureManager инициализирован (tier: free, features: {len(self.feature_manager.features)})")
+        
+        # Обновляем индикатор тарифа в Overlay
+        if self.overlay_window:
+            self.overlay_window.update_tier_indicator("FREE")
+        
+        # 2.2.1. Model Manager [МУДРОСТЬ + ДОБРО] - Проверка и загрузка ML моделей
+        self._check_and_download_models()
+        
+        # 2.3. Проверка обновлений [АЗ + ДОБРО] - НЕ БЛОКИРУЕТ запуск пока нет backend
+        # self._check_for_updates()  # Отключено до готовности backend
+        
+        # 3. Проверка API ключа [ШТОР + АЗ]
+        self._validate_api_key()
         
         if not self.config.validate_config():
             logger.error("[ERROR] Конфигурация невалидна! Проверьте config.yaml")
@@ -173,10 +210,20 @@ class HintsageApp(QObject):
             "whisper": self.config.get("stt.whisper", {})
         }
         
+        # [БЕЗОПАСНОСТЬ] Получаем РАЗРЕШЕННЫЙ движок на основе тарифа
+        allowed_engine = self.feature_manager.get_stt_engine()
+        config_engine = self.config.get("stt.default_engine", "vosk")
+        
+        if config_engine != allowed_engine:
+            logger.warning(f"⚠️ [SECURITY] Config пытается использовать '{config_engine}', но тариф '{self.feature_manager.tier}' позволяет только '{allowed_engine}'")
+            logger.warning(f"⚠️ [SECURITY] Принудительно используем '{allowed_engine}'")
+        
         self.stt_manager = STTManager(
-            default_engine=self.config.get("stt.default_engine", "vosk"),
+            default_engine=allowed_engine,  # ✅ ИЗ FEATURE MANAGER, НЕ ИЗ КОНФИГА!
             config=stt_config
         )
+        
+        logger.info(f"✅ STT Manager инициализирован с движком '{allowed_engine}' (tier: {self.feature_manager.tier})")
         
         # 6. Question Detector [ЧЕЛО + МЫСЛЕТЕ]
         self.question_detector = QuestionDetector(
@@ -555,6 +602,150 @@ class HintsageApp(QObject):
         except Exception as e:
             logger.error(f"[ERROR] Ошибка в _on_request_finished для #{request_number}: {e}", exc_info=True)
     
+    def _check_for_updates(self) -> None:
+        """
+        [АЗ + ДОБРО] - Проверить наличие обновлений при запуске
+        """
+        try:
+            logger.info("🔍 Проверка обновлений...")
+            
+            # Проверяем обновления (с skip_network=True для offline режима пока нет backend)
+            update_available, latest_version, update_info = self.version_manager.check_for_updates(
+                skip_network=True  # TODO: Изменить на False когда backend будет готов
+            )
+            
+            if update_available:
+                logger.info(f"✨ Доступно обновление: {latest_version}")
+                
+                # Добавляем текущую версию в update_info
+                update_info["current_version"] = self.version_manager.get_current_version()
+                
+                # Показываем диалог обновления
+                user_choice = show_update_dialog(update_info, self.overlay_window)
+                
+                if user_choice == "download":
+                    logger.info("📥 Пользователь начал загрузку обновления")
+                elif user_choice == "later":
+                    logger.info("⏰ Пользователь отложил обновление")
+                elif user_choice == "skip":
+                    logger.info("❌ Пользователь пропустил обновление")
+                
+                # Если критическое обновление и пользователь не скачал - выходим
+                if self.version_manager.is_critical_update_available() and user_choice != "download":
+                    logger.error("⚠️ Критическое обновление обязательно!")
+                    error_handler = get_error_handler()
+                    error_handler.handle_api_error(
+                        "Требуется критическое обновление приложения",
+                        "critical_update_required",
+                        {
+                            "suggestion": "Пожалуйста, скачайте и установите последнюю версию"
+                        }
+                    )
+                    sys.exit(1)
+            else:
+                logger.info("✅ Используется актуальная версия")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка при проверке обновлений: {e}")
+            # Не прерываем работу приложения из-за ошибки проверки обновлений
+    
+    def _check_and_download_models(self) -> None:
+        """
+        [МУДРОСТЬ + ДОБРО] - Проверка и загрузка необходимых ML моделей
+        """
+        try:
+            logger.info("🔍 Проверка ML моделей...")
+            
+            # Создаем Model Manager
+            model_manager = ModelManager()
+            
+            # Получаем текущий тариф
+            tier = self.feature_manager.tier if hasattr(self, 'feature_manager') else "free"
+            
+            # Проверяем недостающие модели
+            missing = model_manager.get_missing_models(tier)
+            
+            if not missing:
+                logger.info("✅ Все модели уже загружены")
+                return
+            
+            total_size = sum(m["size_bytes"] for m in missing)
+            size_mb = total_size / 1024 / 1024
+            
+            logger.info(f"📥 Требуется загрузить {len(missing)} моделей (~{size_mb:.0f} MB)")
+            
+            # Показываем диалог загрузки
+            if ModelDownloadDialog:
+                dialog = ModelDownloadDialog(model_manager, tier)
+                result = dialog.exec()
+                
+                if result:
+                    logger.info("✅ Модели успешно загружены")
+                else:
+                    logger.warning("⚠️ Загрузка моделей отменена пользователем")
+            else:
+                # Если нет UI, загружаем в консоли
+                logger.info("📥 Загрузка моделей без UI...")
+                model_manager.download_missing_models(tier)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке/загрузке моделей: {e}")
+            # Не прерываем работу - модели могут быть уже установлены вручную
+    
+    def _validate_api_key(self) -> None:
+        """
+        [ШТОР + АЗ] - Проверить валидность API ключа при запуске
+        """
+        logger.info("🔑 Проверка API ключа...")
+        
+        try:
+            api_manager = get_api_key_manager()
+            
+            # Проверяем активный ключ
+            if not api_manager.validate_active_key():
+                logger.warning("⚠️ Активный API ключ невалиден, пытаемся переключиться...")
+                
+                # Пытаемся автоматически переключиться на резервный ключ
+                if not api_manager.auto_fallback():
+                    logger.error("❌ Не найдено рабочих API ключей")
+                    
+                    # Получаем детальную информацию об ошибке
+                    error_details = api_manager.get_last_error_details()
+                    
+                    # Показываем ошибку пользователю
+                    error_handler = get_error_handler()
+                    error_handler.handle_api_error(
+                        error_details["error_message"],
+                        error_details["error_type"],
+                        error_details
+                    )
+                    
+                    # Выходим из приложения
+                    sys.exit(1)
+                else:
+                    logger.info("✅ Переключились на рабочий ключ")
+            else:
+                logger.info("✅ API ключ валиден")
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке API ключа: {e}")
+            
+            # Показываем ошибку пользователю с детальной информацией
+            error_handler = get_error_handler()
+            error_details = {
+                "error_type": "api_key_check_failed",
+                "error_message": f"Ошибка при проверке API ключа: {str(e)}",
+                "suggestion": "Проверьте подключение к интернету и настройки VPN"
+            }
+            error_handler.handle_api_error(
+                error_details["error_message"],
+                error_details["error_type"],
+                error_details
+            )
+            
+            # Выходим из приложения
+            sys.exit(1)
+    
     def _on_request_error(self, request_id: str, request_number: int, error_msg: str):
         """
         [ДОБРО + НАВЬ] - Обработчик ошибки запроса
@@ -576,6 +767,34 @@ class HintsageApp(QObject):
         """
         [ВЕДИ + МЫСЛЕТЕ] - Сделать скриншот и распознать текст
         """
+        # [БЕЗОПАСНОСТЬ] Проверка доступа к OCR на основе тарифа
+        if not self.feature_manager.can_use_screenshot_ocr():
+            logger.warning(f"⚠️ [SECURITY] Попытка использовать OCR на тарифе '{self.feature_manager.tier}'")
+            logger.warning(f"⚠️ [SECURITY] OCR доступен только на PRO/ENTERPRISE")
+            
+            upgrade_msg = (
+                f"OCR скриншотов доступен только на PRO тарифе\n\n"
+                f"Ваш текущий тариф: {self.feature_manager.tier.upper()}\n\n"
+                f"Перейдите на PRO для доступа к:\n"
+                f"• OCR распознавание текста\n"
+                f"• Whisper GPU (точное распознавание)\n"
+                f"• Безлимитные запросы\n"
+                f"• Расширенный контекст\n\n"
+                f"Цена: 1499₽/месяц\n\n"
+                f"Нажмите Ctrl+Shift+L для авторизации и upgrade"
+            )
+            
+            self.overlay_window.show_error(upgrade_msg)
+            
+            # Показываем также в GUI
+            from modules.ui.error_handler import get_error_handler
+            error_handler = get_error_handler()
+            error_handler.show_warning(
+                "OCR недоступен",
+                f"OCR скриншотов доступен только на PRO тарифе.\n\n{self.feature_manager.get_upgrade_message()}"
+            )
+            return
+        
         logger.info("[SCREENSHOT] Захват скриншота...")
         
         self.overlay_window.set_status("[SCREENSHOT] Захват скриншота...", "#ffaa00")
@@ -680,20 +899,31 @@ def main():
     import locale
     import io
     
-    # Устанавливаем UTF-8 для stdout
+    # Устанавливаем UTF-8 для stdout (только если buffer доступен)
     if sys.platform == 'win32':
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+        try:
+            if sys.stdout.buffer is not None:
+                sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+            if sys.stderr.buffer is not None:
+                sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+        except (AttributeError, TypeError):
+            # В .exe режиме buffer может быть недоступен - это нормально
+            pass
     
     # Настройка логирования
     logger.remove()
     
-    # Консольный вывод с UTF-8 (для русского языка)
-    logger.add(
-        sys.stdout,
-        level="INFO",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{message}</cyan>"
-    )
+    # Консольный вывод с UTF-8 (для русского языка) - только если stdout доступен
+    try:
+        if sys.stdout is not None:
+            logger.add(
+                sys.stdout,
+                level="INFO",
+                format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{message}</cyan>"
+            )
+    except Exception:
+        # В .exe режиме консоль может быть недоступна - это нормально
+        pass
     
     # Файловый вывод с полной информацией (UTF-8 по умолчанию)
     logger.add(

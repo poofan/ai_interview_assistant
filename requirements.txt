@@ -6,6 +6,7 @@ openai>=1.12.0
 # Speech-to-Text
 vosk>=0.3.45
 openai-whisper>=20231117
+faster-whisper>=1.0.0  # GPU-accelerated Whisper
 
 # Audio Capture
 pyaudio>=0.2.13
@@ -45,6 +46,8 @@ cryptography>=41.0.0  # Для шифрования API ключей
 requests>=2.31.0
 aiohttp>=3.9.0
 python-dateutil>=2.8.2
+packaging>=23.0  # Для сравнения версий
+PyJWT>=2.8.0  # Для декодирования JWT токенов
 
 # Logging and Monitoring
 loguru>=0.7.2

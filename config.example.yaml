@@ -1,6 +1,12 @@
 # Hintsage Configuration Example
 # Скопируйте этот файл в config.yaml и заполните своими данными
 
+# Backend API Configuration [АЗ + ШТОР]
+backend:
+  url: "http://localhost:8000"  # Backend API URL
+  frontend_url: "http://localhost:3000"  # Frontend URL для авторизации
+  enabled: false  # Включить авторизацию через backend
+
 # OpenAI Configuration [АЗ + РЦИ]
 openai:
   api_key: "sk-proj-6rZ27YkZcTnhI90SJYZCoA******uf9seOZMO7sap65C5VqxyddZXqfMRU9VDEA"  # Вставьте ваш ключ
